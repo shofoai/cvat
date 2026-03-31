@@ -22,6 +22,7 @@ import { Row, Col } from 'antd/lib/grid';
 import notification from 'antd/lib/notification';
 import message from 'antd/lib/message';
 import Switch from 'antd/lib/switch';
+import InputNumber from 'antd/lib/input-number';
 import lodash from 'lodash';
 
 import { AIToolsIcon } from 'icons';
@@ -158,6 +159,8 @@ interface State {
     activeTracker: MLModel | null;
     startInteractingWithBox: boolean;
     convertMasksToPolygons: boolean;
+    segmentAndTrack: boolean;
+    propagateFrames: number;
     trackedShapes: TrackedShape[];
     fetching: boolean;
     interactorResponseReceived: boolean;
@@ -256,6 +259,8 @@ export class ToolsControlComponent extends React.PureComponent<Props, State> {
 
         this.state = {
             convertMasksToPolygons: false,
+            segmentAndTrack: false,
+            propagateFrames: 30,
             startInteractingWithBox: false,
             activeInteractor: props.interactors.length ? props.interactors[0] : null,
             activeTracker: supportedTrackers.length ? supportedTrackers[0] : null,
@@ -697,7 +702,7 @@ export class ToolsControlComponent extends React.PureComponent<Props, State> {
         const portals = !activeTracker ?
             [] :
             states
-                .filter((objectState) => objectState.objectType === 'track' && objectState.shapeType === 'rectangle')
+                .filter((objectState) => objectState.objectType === 'track' && ['rectangle', 'polygon', 'mask'].includes(objectState.shapeType))
                 .map((objectState: any): React.ReactPortal | null => {
                     const { clientID } = objectState;
                     const selectorID = `#cvat-objects-sidebar-state-item-${clientID}`;
@@ -921,7 +926,9 @@ export class ToolsControlComponent extends React.PureComponent<Props, State> {
                             job: jobInstance.id,
                         }) as TrackerResults;
 
-                        response.shapes = response.shapes.map(trackedRectangleMapper);
+                        response.shapes = response.shapes.map((shape: MinimalShape) => (
+                            shape.type === ShapeType.RECTANGLE ? trackedRectangleMapper(shape) : shape
+                        ));
                         for (let i = 0; i < trackableObjects.clientIDs.length; i++) {
                             const clientID = trackableObjects.clientIDs[i];
                             const shape = response.shapes[i];
@@ -957,51 +964,202 @@ export class ToolsControlComponent extends React.PureComponent<Props, State> {
         }
     }
 
+    private async propagateTrackedShape(
+        clientID: number, trackerModel: MLModel, initialPoints: number[],
+        shapeType: ShapeType, numFrames: number,
+    ): Promise<void> {
+        const {
+            frame, jobInstance, states: objectStates, fetchAnnotations,
+            switchNavigationBlocked,
+        } = this.props;
+
+        const hideMessage = message.loading({
+            content: `SAM2: propagating across ${numFrames} frames...`,
+            duration: 0,
+            className: 'cvat-tracking-notice',
+        });
+
+        try {
+            switchNavigationBlocked(true);
+            let currentState: any = null;
+            let currentPoints = initialPoints;
+
+            for (let i = 1; i <= numFrames; i++) {
+                const targetFrame = frame + i;
+                if (targetFrame > jobInstance.stopFrame) break;
+
+                const callArgs: any = {
+                    frame: targetFrame,
+                    job: jobInstance.id,
+                };
+
+                if (currentState === null) {
+                    callArgs.type = 'init_tracking';
+                    callArgs.shapes = [{ type: shapeType, points: currentPoints }];
+                } else {
+                    callArgs.type = 'track';
+                    callArgs.states = [currentState];
+                }
+
+                const response = await core.lambda.call(
+                    jobInstance.taskId, trackerModel, callArgs,
+                ) as TrackerResults;
+
+                if (response.shapes?.length && response.states?.length) {
+                    const newShape = response.shapes[0];
+                    currentState = response.states[0];
+                    currentPoints = newShape.points;
+
+                    // Update the tracked object's keyframe at this frame
+                    const [objectState] = objectStates.filter(
+                        (_state: any) => _state.clientID === clientID,
+                    );
+                    if (objectState) {
+                        objectState.points = newShape.points;
+                        objectState.frame = targetFrame;
+                        objectState.keyframe = true;
+                        await objectState.save();
+                    }
+                }
+            }
+
+            // Update tracked shape state
+            this.setState((prevState: State) => ({
+                trackedShapes: prevState.trackedShapes.map((ts) =>
+                    ts.clientID === clientID
+                        ? { ...ts, serverlessState: currentState, shapePoints: currentPoints }
+                        : ts,
+                ),
+            }));
+
+            fetchAnnotations();
+        } catch (error: any) {
+            notification.error({
+                description: error.message,
+                message: 'Propagation error',
+                duration: null,
+            });
+        } finally {
+            hideMessage();
+            switchNavigationBlocked(false);
+        }
+    }
+
     private async constructFromLatestResponse(): Promise<void> {
-        const { convertMasksToPolygons, thresholdValue } = this.state;
+        const { convertMasksToPolygons, segmentAndTrack, trackedShapes, thresholdValue,
+            propagateFrames } = this.state;
         const {
             frame, labels, curZOrder, activeLabelID, createAnnotations,
+            jobInstance, fetchAnnotations,
         } = this.props;
 
         if (!this.interaction.latestResponse.length) {
             return;
         }
 
-        const common = {
-            frame,
-            objectType: ObjectType.SHAPE,
-            source: core.enums.Source.SEMI_AUTO,
-            label: labels.find((label) => label.id === activeLabelID as number) as Label,
-            occluded: false,
-            zOrder: curZOrder,
-        };
+        const label = labels.find((_label) => _label.id === activeLabelID as number) as Label;
 
         const objectsToConstruct = this.interaction.latestResponse.filter(
             ({ confidence }) => typeof confidence !== 'number' || confidence >= thresholdValue,
         );
 
-        let objects: ObjectState[] = [];
-        if (convertMasksToPolygons) {
-            objects = objectsToConstruct
-                .filter(({ approximatedPoints }) => approximatedPoints.length >= 3)
-                .map(({ approximatedPoints }) => (
-                    new core.classes.ObjectState({
-                        shapeType: ShapeType.POLYGON,
-                        points: approximatedPoints.flat(),
-                        ...common,
-                    })
-                ));
+        if (segmentAndTrack) {
+            // Create as Track for segment-and-track mode
+            const trackers = this.props.trackers || [];
+            const sam2Tracker = trackers.find((t: MLModel) =>
+                t.name.toLowerCase().includes('sam2') && t.kind === 'tracker',
+            );
+
+            for (const { rle, approximatedPoints } of objectsToConstruct) {
+                let shapeType: ShapeType;
+                let points: number[];
+
+                if (convertMasksToPolygons && approximatedPoints.length >= 3) {
+                    shapeType = ShapeType.POLYGON;
+                    points = approximatedPoints.flat();
+                } else {
+                    shapeType = ShapeType.MASK;
+                    points = Array.from(rle);
+                }
+
+                const state = new core.classes.ObjectState({
+                    shapeType,
+                    objectType: ObjectType.TRACK,
+                    source: core.enums.Source.SEMI_AUTO,
+                    zOrder: curZOrder,
+                    label,
+                    points,
+                    frame,
+                    occluded: false,
+                    attributes: {},
+                    descriptions: sam2Tracker ? [`Trackable (${sam2Tracker.name})`] : [],
+                });
+
+                try {
+                    const [clientID] = await jobInstance.annotations.put([state]);
+                    if (sam2Tracker) {
+                        this.setState((prevState: State) => ({
+                            trackedShapes: [
+                                ...prevState.trackedShapes,
+                                {
+                                    clientID,
+                                    serverlessState: null,
+                                    shapePoints: points,
+                                    trackerModel: sam2Tracker,
+                                },
+                            ],
+                        }));
+
+                        // Auto-propagate across frames if propagateFrames > 0
+                        if (propagateFrames > 0) {
+                            await this.propagateTrackedShape(
+                                clientID, sam2Tracker, points, shapeType, propagateFrames,
+                            );
+                        }
+                    }
+                    fetchAnnotations();
+                } catch (error: any) {
+                    notification.error({
+                        description: error.message,
+                        message: 'Could not create tracked annotation',
+                        duration: null,
+                    });
+                }
+            }
         } else {
-            objects = objectsToConstruct
-                .map(({ rle }) => (
-                    new core.classes.ObjectState({
-                        shapeType: ShapeType.MASK,
-                        points: Array.from(rle),
-                        ...common,
-                    })
-                ));
+            // Original behavior: create as Shape
+            const common = {
+                frame,
+                objectType: ObjectType.SHAPE,
+                source: core.enums.Source.SEMI_AUTO,
+                label,
+                occluded: false,
+                zOrder: curZOrder,
+            };
+
+            let objects: ObjectState[] = [];
+            if (convertMasksToPolygons) {
+                objects = objectsToConstruct
+                    .filter(({ approximatedPoints }) => approximatedPoints.length >= 3)
+                    .map(({ approximatedPoints }) => (
+                        new core.classes.ObjectState({
+                            shapeType: ShapeType.POLYGON,
+                            points: approximatedPoints.flat(),
+                            ...common,
+                        })
+                    ));
+            } else {
+                objects = objectsToConstruct
+                    .map(({ rle }) => (
+                        new core.classes.ObjectState({
+                            shapeType: ShapeType.MASK,
+                            points: Array.from(rle),
+                            ...common,
+                        })
+                    ));
+            }
+            createAnnotations(objects);
         }
-        createAnnotations(objects);
     }
 
     private async initializeOpenCV(): Promise<void> {
@@ -1149,6 +1307,7 @@ export class ToolsControlComponent extends React.PureComponent<Props, State> {
         } = this.props;
         const {
             activeInteractor, activeLabelID, fetching, startInteractingWithBox, convertMasksToPolygons,
+            segmentAndTrack,
         } = this.state;
 
         if (!interactors.length) {
@@ -1225,6 +1384,35 @@ export class ToolsControlComponent extends React.PureComponent<Props, State> {
                         />
                         <Text>Convert masks to polygons</Text>
                     </div>
+
+                    <div>
+                        <Switch
+                            checked={segmentAndTrack}
+                            onChange={(checked: boolean) => {
+                                this.setState({ segmentAndTrack: checked });
+                            }}
+                        />
+                        <Text>Segment &amp; track across frames</Text>
+                    </div>
+
+                    {segmentAndTrack && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
+                            <Text>Propagate</Text>
+                            <InputNumber
+                                min={1}
+                                max={500}
+                                value={this.state.propagateFrames}
+                                onChange={(value: number | null) => {
+                                    if (value !== null) {
+                                        this.setState({ propagateFrames: value });
+                                    }
+                                }}
+                                style={{ width: '70px' }}
+                                size='small'
+                            />
+                            <Text>frames</Text>
+                        </div>
+                    )}
 
                     {renderStartWithBox && (
                         <div>

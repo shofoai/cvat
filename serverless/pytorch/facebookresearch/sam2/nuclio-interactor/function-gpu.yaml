@@ -1,0 +1,65 @@
+metadata:
+  name: pth-facebookresearch-sam2-interactor
+  namespace: cvat
+  annotations:
+    name: SAM2 Segment
+    version: 2
+    type: interactor
+    spec:
+    min_pos_points: 1
+    min_neg_points: 0
+    startswith_box_optional: true
+    help_message: Segment objects using SAM2. Click positive points on the object, negative points on background.
+
+spec:
+  description: Interactive object segmentation with SAM2
+  runtime: 'python:3.10'
+  handler: main:handler
+  eventTimeout: 30s
+  env:
+    - name: PYTHONPATH
+      value: /opt/nuclio/sam2
+
+  build:
+    image: cvat.pth.facebookresearch.sam2.interactor:v1-gpu
+    baseImage: ubuntu:22.04
+
+    directives:
+      preCopy:
+        - kind: ENV
+          value: NVIDIA_VISIBLE_DEVICES=all
+        - kind: ENV
+          value: NVIDIA_DRIVER_CAPABILITIES=compute,utility
+        - kind: ENV
+          value: DEBIAN_FRONTEND=noninteractive
+        - kind: WORKDIR
+          value: /opt/nuclio/sam2
+        - kind: RUN
+          value: apt-get update && apt-get -y install curl git python3 python3-pip python-is-python3 ffmpeg libsm6 libxext6 && rm -rf /var/lib/apt/lists/*
+        - kind: RUN
+          value: pip3 install torch torchvision torchaudio --no-cache-dir
+        - kind: RUN
+          value: pip3 install opencv-python-headless numpy pillow huggingface_hub --no-cache-dir
+        - kind: RUN
+          value: pip3 install git+https://github.com/facebookresearch/sam2.git --no-cache-dir
+
+  triggers:
+    myHttpTrigger:
+      numWorkers: 1
+      kind: 'http'
+      workerAvailabilityTimeoutMilliseconds: 10000
+      attributes:
+        maxRequestBodySize: 33554432
+
+  readinessTimeoutSeconds: 300
+
+  resources:
+    limits:
+      nvidia.com/gpu: 1
+
+  platform:
+    attributes:
+      restartPolicy:
+        name: always
+        maximumRetryCount: 3
+      mountMode: volume
