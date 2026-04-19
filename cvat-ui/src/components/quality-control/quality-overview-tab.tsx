@@ -85,6 +85,7 @@ function QualityOverviewTab(props: Readonly<Props>): JSX.Element {
     const targetMetricThreshold = qualitySettings.settings?.targetMetricThreshold ?? 0.7;
 
     const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState<string | null>(null);
     const [refreshTick, setRefreshTick] = useState(0);
     const [taskReport, setTaskReport] = useState<QualityReport | null>(null);
     const [jobReports, setJobReports] = useState<QualityReport[]>([]);
@@ -105,17 +106,18 @@ function QualityOverviewTab(props: Readonly<Props>): JSX.Element {
     useEffect(() => {
         let cancelled = false;
         setLoading(true);
+        setLoadError(null);
 
         (async () => {
             try {
                 const filter = isTask ?
                     { taskID: instance.id, target: 'task' } :
                     { projectID: instance.id, target: 'project' };
-                const [report] = await core.analytics.quality.reports.get(filter);
+                const [report] = await core.analytics.quality.reports(filter);
 
                 let childReports: QualityReport[] = [];
                 if (report) {
-                    childReports = await core.analytics.quality.reports.get({
+                    childReports = await core.analytics.quality.reports({
                         parentID: report.id,
                         target: isTask ? 'job' : 'task',
                     });
@@ -126,7 +128,7 @@ function QualityOverviewTab(props: Readonly<Props>): JSX.Element {
                     await Promise.all(childReports.map(async (r) => {
                         if (r.summary.conflictCount > 0) {
                             try {
-                                const rows = await core.analytics.quality.conflicts.get({ reportID: r.id });
+                                const rows = await core.analytics.quality.conflicts({ reportID: r.id });
                                 conflictsMap[r.jobID] = rows;
                             } catch {
                                 conflictsMap[r.jobID] = [];
@@ -155,9 +157,11 @@ function QualityOverviewTab(props: Readonly<Props>): JSX.Element {
                 setIssueStats(issues);
             } catch (err: any) {
                 if (!cancelled) {
+                    const msg = err?.message ?? 'Unknown error';
+                    setLoadError(msg);
                     notification.error({
                         message: 'Failed to load quality report',
-                        description: err?.message,
+                        description: msg,
                     });
                 }
             } finally {
@@ -206,13 +210,30 @@ function QualityOverviewTab(props: Readonly<Props>): JSX.Element {
         );
     }
 
-    if (!taskReport) {
+    if (loadError) {
         return (
             <div className='cvat-quality-overview-tab' style={{ padding: 16 }}>
-                <Text type='secondary'>
-                    No quality report yet. Reports are generated automatically once there is a
-                    Ground Truth job with annotations and at least one annotation job in review.
-                </Text>
+                <Text type='danger'>{`Could not load quality report: ${loadError}`}</Text>
+            </div>
+        );
+    }
+
+    if (!taskReport) {
+        const hasGtJob = isTask && gtJob !== null;
+        return (
+            <div className='cvat-quality-overview-tab' style={{ padding: 16 }}>
+                {hasGtJob ? (
+                    <Text type='secondary'>
+                        Quality report has not been generated yet. Reports run automatically once
+                        the GT job has annotations and there is at least one annotation job in
+                        review. You can trigger one from the task actions menu.
+                    </Text>
+                ) : (
+                    <Text type='secondary'>
+                        This task has no Ground Truth job yet. Create one from the task page
+                        (Actions → Create ground truth job) to start measuring annotation quality.
+                    </Text>
+                )}
             </div>
         );
     }
