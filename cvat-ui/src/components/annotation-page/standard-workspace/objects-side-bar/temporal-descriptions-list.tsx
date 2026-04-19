@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: MIT
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useSelector, useDispatch, shallowEqual } from 'react-redux';
 import Button from 'antd/lib/button';
 import Input from 'antd/lib/input';
@@ -12,9 +12,10 @@ import Text from 'antd/lib/typography/Text';
 import notification from 'antd/lib/notification';
 import {
     PlusOutlined, DeleteOutlined, EditOutlined, SaveOutlined, CloseOutlined,
+    PlayCircleOutlined, PauseCircleOutlined,
 } from '@ant-design/icons';
 
-import { changeFrameAsync } from 'actions/annotation-actions';
+import { changeFrameAsync, switchPlay } from 'actions/annotation-actions';
 import { CombinedState } from 'reducers';
 import { getCore, TemporalDescription } from 'cvat-core-wrapper';
 
@@ -42,16 +43,48 @@ function emptyDraft(frame: number): DraftState {
 
 export default function TemporalDescriptionsList(): JSX.Element {
     const dispatch = useDispatch();
-    const { jobId, frame, startFrame, stopFrame } = useSelector((state: CombinedState) => ({
+    const { jobId, frame, startFrame, stopFrame, playing } = useSelector((state: CombinedState) => ({
         jobId: state.annotation.job.instance?.id as number | undefined,
         frame: state.annotation.player.frame.number,
         startFrame: state.annotation.job.instance?.startFrame ?? 0,
         stopFrame: state.annotation.job.instance?.stopFrame ?? 0,
+        playing: state.annotation.player.playing,
     }), shallowEqual);
 
     const [descriptions, setDescriptions] = useState<TemporalDescription[]>([]);
     const [loading, setLoading] = useState(false);
     const [draft, setDraft] = useState<DraftState | null>(null);
+    const previewRef = useRef<{ id: number; end: number } | null>(null);
+    const [previewingId, setPreviewingId] = useState<number | null>(null);
+
+    useEffect(() => {
+        const preview = previewRef.current;
+        if (preview && frame >= preview.end) {
+            dispatch(switchPlay(false));
+            previewRef.current = null;
+            setPreviewingId(null);
+        }
+    }, [frame, dispatch]);
+
+    useEffect(() => {
+        if (!playing && previewRef.current) {
+            previewRef.current = null;
+            setPreviewingId(null);
+        }
+    }, [playing]);
+
+    const preview = (desc: TemporalDescription): void => {
+        if (previewingId === desc.id) {
+            dispatch(switchPlay(false));
+            previewRef.current = null;
+            setPreviewingId(null);
+            return;
+        }
+        previewRef.current = { id: desc.id, end: desc.frame_end };
+        setPreviewingId(desc.id);
+        dispatch(changeFrameAsync(desc.frame_start));
+        dispatch(switchPlay(true));
+    };
 
     const load = useCallback(async () => {
         if (!jobId) return;
@@ -222,6 +255,13 @@ export default function TemporalDescriptionsList(): JSX.Element {
                             <Text strong>{`Frames ${desc.frame_start}–${desc.frame_end}`}</Text>
                         </Col>
                         <Col onClick={(e) => e.stopPropagation()}>
+                            <Button
+                                size='small'
+                                type='text'
+                                title={previewingId === desc.id ? 'Stop preview' : 'Play this segment'}
+                                icon={previewingId === desc.id ? <PauseCircleOutlined /> : <PlayCircleOutlined />}
+                                onClick={() => preview(desc)}
+                            />
                             <Button
                                 size='small'
                                 type='text'
