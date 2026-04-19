@@ -182,3 +182,31 @@ $excluded-background: #d9d9d973;
     padding-left: $grid-unit-size * 2;
     padding-right: 0;
 }
+
+.cvat-quality-overview-tab {
+    padding: $grid-unit-size;
+
+    .cvat-quality-hero-card {
+        border: 1px solid #e8e8e8;
+        border-radius: 4px;
+        padding: $grid-unit-size * 2;
+        min-height: $grid-unit-size * 14;
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-start;
+        background: #fff;
+    }
+
+    .cvat-quality-hero-card-value {
+        font-size: 32px;
+        font-weight: 500;
+        line-height: 1.2;
+        margin: $grid-unit-size 0;
+    }
+
+    .cvat-quality-jobs-table {
+        .ant-table-row {
+            cursor: default;
+        }
+    }
+}
