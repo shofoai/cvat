@@ -11,6 +11,13 @@ from cvat.apps.engine.models import DimensionType, Job, TemporalDescription
 
 from .registry import exporter
 
+# CVAT re-encodes all video tasks to 25 FPS internally
+# (see cvat/apps/engine/media_extractors.py::_output_fps).
+# Frame numbers in annotations correspond to this rate, so
+# frame/CVAT_OUTPUT_FPS is the correct wall-clock timestamp for
+# consumers playing back any copy of the source video.
+CVAT_OUTPUT_FPS = 25.0
+
 
 def _resolve_task_and_jobs(instance_data):
     """Return (db_task, [db_jobs]) from a JobData / TaskData instance."""
@@ -104,11 +111,14 @@ def _serialize_video_metadata(db_task):
     if not source_filename and video:
         source_filename = os.path.basename(video.path or "")
 
+    frame_count = data.size if data else None
     return {
         "source_filename": source_filename,
-        "frame_count": data.size if data else None,
+        "frame_count": frame_count,
         "start_frame": data.start_frame if data else None,
         "stop_frame": data.stop_frame if data else None,
+        "fps": CVAT_OUTPUT_FPS,
+        "duration_seconds": (frame_count / CVAT_OUTPUT_FPS) if frame_count else None,
         "width": video.width if video else None,
         "height": video.height if video else None,
         "resolution": f"{video.width}x{video.height}" if video else None,
@@ -127,6 +137,8 @@ def _serialize_temporal_descriptions(db_jobs):
         out.append({
             "frame_start": d.frame_start,
             "frame_end": d.frame_end,
+            "timestamp_start_seconds": round(d.frame_start / CVAT_OUTPUT_FPS, 3),
+            "timestamp_end_seconds": round(d.frame_end / CVAT_OUTPUT_FPS, 3),
             "text": d.text,
             "structured_fields": d.structured_fields or {},
         })
