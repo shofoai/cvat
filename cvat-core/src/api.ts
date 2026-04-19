@@ -168,6 +168,24 @@ function build(): CVATCore {
                 return result;
             },
         },
+        temporalDescriptions: {
+            async get(filter) {
+                const result = await PluginRegistry.apiWrapper(cvat.temporalDescriptions.get, filter);
+                return result;
+            },
+            async create(data) {
+                const result = await PluginRegistry.apiWrapper(cvat.temporalDescriptions.create, data);
+                return result;
+            },
+            async update(id, data) {
+                const result = await PluginRegistry.apiWrapper(cvat.temporalDescriptions.update, id, data);
+                return result;
+            },
+            async delete(id) {
+                const result = await PluginRegistry.apiWrapper(cvat.temporalDescriptions.delete, id);
+                return result;
+            },
+        },
         users: {
             async get(filter = {}) {
                 const result = await PluginRegistry.apiWrapper(cvat.users.get, filter);

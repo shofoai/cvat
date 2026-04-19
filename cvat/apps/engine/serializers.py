@@ -3562,6 +3562,45 @@ class IssueWriteSerializer(WriteOnceMixin, serializers.ModelSerializer):
         fields = ('frame', 'position', 'job', 'assignee', 'message', 'resolved')
         write_once_fields = ('frame', 'job', 'message')
 
+
+class TemporalDescriptionReadSerializer(serializers.ModelSerializer):
+    owner = BasicUserSerializer(allow_null=True, required=False)
+
+    class Meta:
+        model = models.TemporalDescription
+        fields = ('id', 'job', 'frame_start', 'frame_end', 'text',
+            'structured_fields', 'owner', 'created_date', 'updated_date')
+        read_only_fields = fields
+        extra_kwargs = {
+            'created_date': {'allow_null': True},
+            'updated_date': {'allow_null': True},
+        }
+
+
+class TemporalDescriptionWriteSerializer(serializers.ModelSerializer):
+    text = serializers.CharField(
+        allow_blank=True, required=False, style={'base_template': 'textarea.html'},
+    )
+    structured_fields = serializers.JSONField(required=False)
+
+    def to_representation(self, instance):
+        return TemporalDescriptionReadSerializer(instance, context=self.context).data
+
+    def validate(self, attrs):
+        frame_start = attrs.get('frame_start',
+            getattr(self.instance, 'frame_start', None))
+        frame_end = attrs.get('frame_end',
+            getattr(self.instance, 'frame_end', None))
+        if frame_start is not None and frame_end is not None and frame_end < frame_start:
+            raise serializers.ValidationError(
+                {'frame_end': 'frame_end must be >= frame_start'})
+        return attrs
+
+    class Meta:
+        model = models.TemporalDescription
+        fields = ('job', 'frame_start', 'frame_end', 'text', 'structured_fields')
+
+
 class ManifestSerializer(serializers.ModelSerializer):
     class Meta:
         model = models.Manifest

@@ -52,6 +52,18 @@ import {
 } from './exceptions';
 import { PaginatedResource } from './core-types';
 
+export interface TemporalDescription {
+    id: number;
+    job: number;
+    frame_start: number;
+    frame_end: number;
+    text: string;
+    structured_fields: Record<string, unknown>;
+    owner: { id: number; username: string } | null;
+    created_date: string;
+    updated_date: string;
+}
+
 export default interface CVATCore {
     plugins: {
         list: typeof PluginRegistry.list;
@@ -174,6 +186,12 @@ export default interface CVATCore {
     };
     frames: {
         getMeta: (type: 'task' | 'job', id: number) => Promise<FramesMetaData>;
+    };
+    temporalDescriptions: {
+        get: (filter: { job_id?: number; task_id?: number }) => Promise<TemporalDescription[]>;
+        create: (data: Partial<TemporalDescription> & { job: number }) => Promise<TemporalDescription>;
+        update: (id: number, data: Partial<TemporalDescription>) => Promise<TemporalDescription>;
+        delete: (id: number) => Promise<void>;
     };
     requests: {
         list: () => Promise<PaginatedResource<Request>>;

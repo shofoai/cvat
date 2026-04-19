@@ -1512,6 +1512,41 @@ class Comment(TimestampedModel):
     def get_job_id(self):
         return self.issue.get_job_id()
 
+
+class TemporalDescription(TimestampedModel):
+    job = models.ForeignKey(
+        Job, related_name="temporal_descriptions", related_query_name="temporal_description",
+        on_delete=models.CASCADE,
+    )
+    frame_start = models.PositiveIntegerField()
+    frame_end = models.PositiveIntegerField()
+    owner = models.ForeignKey(
+        User, null=True, blank=True, related_name='+', on_delete=models.SET_NULL,
+    )
+    text = models.TextField(default='', blank=True)
+    structured_fields = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        default_permissions = ()
+        ordering = ['frame_start', 'id']
+
+    def get_project_id(self):
+        return self.job.get_project_id()
+
+    @property
+    def organization_id(self):
+        return self.job.organization_id
+
+    def get_organization_slug(self):
+        return self.job.get_organization_slug()
+
+    def get_task_id(self):
+        return self.job.get_task_id()
+
+    def get_job_id(self):
+        return self.job_id
+
+
 class Manifest(models.Model):
     filename = models.CharField(max_length=1024, default='manifest.jsonl')
     cloud_storage = models.ForeignKey(

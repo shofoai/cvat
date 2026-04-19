@@ -87,6 +87,7 @@ from cvat.apps.engine.models import (
     StorageChoice,
     StorageMethodChoice,
     Task,
+    TemporalDescription,
 )
 from cvat.apps.engine.permissions import (
     AnnotationGuidePermission,
@@ -99,6 +100,7 @@ from cvat.apps.engine.permissions import (
     ProjectPermission,
     ServerPermission,
     TaskPermission,
+    TemporalDescriptionPermission,
     UserPermission,
     get_iam_context,
 )
@@ -140,6 +142,8 @@ from cvat.apps.engine.serializers import (
     TaskValidationLayoutReadSerializer,
     TaskValidationLayoutWriteSerializer,
     TaskWriteSerializer,
+    TemporalDescriptionReadSerializer,
+    TemporalDescriptionWriteSerializer,
     UserSerializer,
 )
 from cvat.apps.engine.tus import TusFile
@@ -2241,6 +2245,64 @@ class CommentViewSet(viewsets.GenericViewSet, mixins.ListModelMixin,
             return CommentReadSerializer
         else:
             return CommentWriteSerializer
+
+    def perform_create(self, serializer, **kwargs):
+        serializer.save(owner=self.request.user)
+
+
+@extend_schema(tags=['temporal_descriptions'])
+@extend_schema_view(
+    retrieve=extend_schema(
+        summary='Get temporal description details',
+        responses={'200': TemporalDescriptionReadSerializer}),
+    list=extend_schema(
+        summary='List temporal descriptions',
+        responses={'200': TemporalDescriptionReadSerializer(many=True)}),
+    partial_update=extend_schema(
+        summary='Update a temporal description',
+        request=TemporalDescriptionWriteSerializer(partial=True),
+        responses={'200': TemporalDescriptionReadSerializer}),
+    create=extend_schema(
+        summary='Create a temporal description',
+        request=TemporalDescriptionWriteSerializer,
+        parameters=ORGANIZATION_OPEN_API_PARAMETERS,
+        responses={'201': TemporalDescriptionReadSerializer}),
+    destroy=extend_schema(
+        summary='Delete a temporal description',
+        responses={'204': OpenApiResponse(description='Deleted')}),
+)
+class TemporalDescriptionViewSet(viewsets.GenericViewSet, mixins.ListModelMixin,
+    mixins.RetrieveModelMixin, mixins.CreateModelMixin, mixins.DestroyModelMixin,
+    PartialUpdateModelMixin
+):
+    queryset = TemporalDescription.objects.prefetch_related(
+        'job__segment__task', 'owner', 'job'
+    ).all()
+
+    iam_organization_field = 'job__segment__task__organization'
+    iam_permission_class = TemporalDescriptionPermission
+    search_fields = ('owner',)
+    filter_fields = list(search_fields) + ['id', 'job_id', 'task_id', 'frame_start', 'frame_end']
+    simple_filters = list(search_fields) + ['job_id', 'task_id', 'frame_start', 'frame_end']
+    ordering_fields = list(filter_fields)
+    lookup_fields = {
+        'owner': 'owner__username',
+        'job_id': 'job',
+        'task_id': 'job__segment__task__id',
+    }
+    ordering = 'frame_start'
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        if self.action == 'list':
+            perm = TemporalDescriptionPermission.create_scope_list(self.request)
+            queryset = perm.filter(queryset)
+        return queryset
+
+    def get_serializer_class(self):
+        if self.request.method in SAFE_METHODS:
+            return TemporalDescriptionReadSerializer
+        return TemporalDescriptionWriteSerializer
 
     def perform_create(self, serializer, **kwargs):
         serializer.save(owner=self.request.user)

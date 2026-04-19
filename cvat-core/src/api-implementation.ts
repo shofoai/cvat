@@ -579,6 +579,18 @@ export default function implementAPI(cvat: CVATCore): CVATCore {
         const result = await getFramesMeta(type, id);
         return result;
     });
+    implementationMixin(cvat.temporalDescriptions.get, async (filter) => {
+        return serverProxy.temporalDescriptions.get(filter);
+    });
+    implementationMixin(cvat.temporalDescriptions.create, async (data) => {
+        return serverProxy.temporalDescriptions.create(data);
+    });
+    implementationMixin(cvat.temporalDescriptions.update, async (id, data) => {
+        return serverProxy.temporalDescriptions.update(id, data);
+    });
+    implementationMixin(cvat.temporalDescriptions.delete, async (id) => {
+        return serverProxy.temporalDescriptions.delete(id);
+    });
 
     return cvat;
 }

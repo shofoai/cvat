@@ -17,6 +17,7 @@ import LabelsList from 'components/annotation-page/standard-workspace/objects-si
 import { collapseSidebar as collapseSidebarAction } from 'actions/annotation-actions';
 import AppearanceBlock from 'components/annotation-page/appearance-block';
 import IssuesListComponent from 'components/annotation-page/standard-workspace/objects-side-bar/issues-list';
+import TemporalDescriptionsList from 'components/annotation-page/standard-workspace/objects-side-bar/temporal-descriptions-list';
 
 interface OwnProps {
     objectsList: JSX.Element;
@@ -107,7 +108,11 @@ function ObjectsSideBar(props: StateToProps & DispatchToProps & OwnProps): JSX.E
                     label: 'Labels',
                     forceRender: true,
                     children: <LabelsList />,
-                }, ...(is2D ? [{ key: 'issues', label: 'Issues', children: <IssuesListComponent /> }] : [])]}
+                }, ...(is2D ? [{ key: 'issues', label: 'Issues', children: <IssuesListComponent /> }] : []), {
+                    key: 'descriptions',
+                    label: 'Descriptions',
+                    children: <TemporalDescriptionsList />,
+                }]}
             />
             {!sidebarCollapsed && <AppearanceBlock />}
         </Layout.Sider>

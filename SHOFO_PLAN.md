@@ -110,6 +110,7 @@ Build on top of CVAT's existing events/analytics (ClickHouse):
 - [ ] Dashboards — annotations per hour, accuracy trends per labeler
 - [ ] Deadlines — assign due dates to jobs, show overdue items
 - [ ] Billing — hours worked x rate per labeler
+- [ ] **Flexible job creation** — CVAT locks regular annotation jobs after task creation (only GT jobs can be added via +). Modify the + button to also allow adding annotation jobs with custom frame ranges, enabling mid-project labeler additions and consensus annotation (multiple labelers on same frames).
 
 ---
 

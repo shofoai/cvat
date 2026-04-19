@@ -1464,6 +1464,52 @@ async function deleteIssue(issueID: number): Promise<void> {
     }
 }
 
+async function getTemporalDescriptions(filter) {
+    const { backendAPI } = config;
+    try {
+        const organization = enableOrganization();
+        const response = await fetchAll(`${backendAPI}/temporal-descriptions`, {
+            ...filter,
+            ...organization,
+        });
+        return response.results;
+    } catch (errorData) {
+        throw generateError(errorData);
+    }
+}
+
+async function createTemporalDescription(data) {
+    const { backendAPI } = config;
+    try {
+        const organization = enableOrganization();
+        const response = await Axios.post(`${backendAPI}/temporal-descriptions`, data, {
+            params: { ...organization },
+        });
+        return response.data;
+    } catch (errorData) {
+        throw generateError(errorData);
+    }
+}
+
+async function updateTemporalDescription(id: number, data) {
+    const { backendAPI } = config;
+    try {
+        const response = await Axios.patch(`${backendAPI}/temporal-descriptions/${id}`, data);
+        return response.data;
+    } catch (errorData) {
+        throw generateError(errorData);
+    }
+}
+
+async function deleteTemporalDescription(id: number): Promise<void> {
+    const { backendAPI } = config;
+    try {
+        await Axios.delete(`${backendAPI}/temporal-descriptions/${id}`);
+    } catch (errorData) {
+        throw generateError(errorData);
+    }
+}
+
 async function saveJob(id: number, jobData: Partial<SerializedJob>): Promise<SerializedJob> {
     const { backendAPI } = config;
 
@@ -2573,6 +2619,13 @@ export default Object.freeze({
         update: updateIssue,
         get: getIssues,
         delete: deleteIssue,
+    }),
+
+    temporalDescriptions: Object.freeze({
+        get: getTemporalDescriptions,
+        create: createTemporalDescription,
+        update: updateTemporalDescription,
+        delete: deleteTemporalDescription,
     }),
 
     comments: Object.freeze({
