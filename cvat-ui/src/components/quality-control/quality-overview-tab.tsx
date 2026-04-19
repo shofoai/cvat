@@ -104,9 +104,10 @@ function QualityOverviewTab(props: Readonly<Props>): JSX.Element {
             });
             notification.info({
                 message: 'Quality report generation started',
-                description: 'This can take up to a minute. Refresh shortly.',
+                description: 'This can take 30-60 seconds. The page will auto-refresh when done.',
             });
-            setTimeout(() => setRefreshTick((n) => n + 1), 5000);
+            setTimeout(() => setRefreshTick((n) => n + 1), 30000);
+            setTimeout(() => setRefreshTick((n) => n + 1), 60000);
         } catch (err: any) {
             notification.error({
                 message: 'Failed to start report generation',
@@ -345,10 +346,13 @@ function QualityOverviewTab(props: Readonly<Props>): JSX.Element {
         <div className='cvat-quality-overview-tab'>
             <Row justify='space-between' align='middle' style={{ marginBottom: 16 }}>
                 <Col>
-                    <Button
-                        icon={<ReloadOutlined />}
-                        onClick={() => setRefreshTick((n) => n + 1)}
-                    />
+                    <CVATTooltip title='Regenerate the quality report (compares current annotations to GT)'>
+                        <Button
+                            icon={<ReloadOutlined />}
+                            loading={generating}
+                            onClick={triggerReport}
+                        />
+                    </CVATTooltip>
                     <Text type='secondary' style={{ marginLeft: 8 }}>{`Created ${createdText}`}</Text>
                 </Col>
                 <Col>
