@@ -92,6 +92,30 @@ function QualityOverviewTab(props: Readonly<Props>): JSX.Element {
     const [conflictsByJob, setConflictsByJob] = useState<Record<number, QualityConflict[]>>({});
     const [issueStats, setIssueStats] = useState<{ total: number; resolved: number }>({ total: 0, resolved: 0 });
     const [expandedJobId, setExpandedJobId] = useState<number | null>(null);
+    const [generating, setGenerating] = useState(false);
+
+    const triggerReport = useCallback(async (): Promise<void> => {
+        const payload = isTask ? { task_id: instance.id } : { project_id: instance.id };
+        setGenerating(true);
+        try {
+            await (core as any).server.request('/api/quality/reports', {
+                method: 'POST',
+                data: payload,
+            });
+            notification.info({
+                message: 'Quality report generation started',
+                description: 'This can take up to a minute. Refresh shortly.',
+            });
+            setTimeout(() => setRefreshTick((n) => n + 1), 5000);
+        } catch (err: any) {
+            notification.error({
+                message: 'Failed to start report generation',
+                description: err?.message ?? 'Unknown error',
+            });
+        } finally {
+            setGenerating(false);
+        }
+    }, [isTask, instance]);
 
     const gtJob: Job | null = useMemo(() => {
         if (!isTask) return null;
@@ -223,11 +247,19 @@ function QualityOverviewTab(props: Readonly<Props>): JSX.Element {
         return (
             <div className='cvat-quality-overview-tab' style={{ padding: 16 }}>
                 {hasGtJob ? (
-                    <Text type='secondary'>
-                        Quality report has not been generated yet. Reports run automatically once
-                        the GT job has annotations and there is at least one annotation job in
-                        review. You can trigger one from the task actions menu.
-                    </Text>
+                    <>
+                        <Text type='secondary' style={{ display: 'block', marginBottom: 12 }}>
+                            Quality report has not been generated yet. Click Generate to queue a
+                            report — this compares each annotation job to the Ground Truth job.
+                        </Text>
+                        <Button
+                            type='primary'
+                            loading={generating}
+                            onClick={triggerReport}
+                        >
+                            Generate report
+                        </Button>
+                    </>
                 ) : (
                     <Text type='secondary'>
                         This task has no Ground Truth job yet. Create one from the task page
