@@ -135,6 +135,7 @@ def _serialize_temporal_descriptions(db_jobs):
     out = []
     for d in descs:
         out.append({
+            "id": d.id,
             "frame_start": d.frame_start,
             "frame_end": d.frame_end,
             "timestamp_start_seconds": round(d.frame_start / CVAT_OUTPUT_FPS, 3),
