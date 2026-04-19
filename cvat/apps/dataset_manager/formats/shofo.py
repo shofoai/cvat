@@ -4,7 +4,6 @@
 
 import json
 import os
-from datetime import datetime, timezone
 from pathlib import Path
 
 from cvat.apps.dataset_manager.util import make_zip_archive
@@ -41,43 +40,31 @@ def _serialize_labels(instance_data):
     return out
 
 
-def _serialize_shape(shape, label_name):
-    return {
-        "type": shape.type,
-        "label": label_name,
-        "frame": shape.frame,
-        "points": list(shape.points),
-        "rotation": getattr(shape, "rotation", 0),
-        "occluded": getattr(shape, "occluded", False),
-        "outside": getattr(shape, "outside", False),
-        "z_order": getattr(shape, "z_order", 0),
-        "group": getattr(shape, "group", 0),
-        "attributes": [
-            {"name": a.name, "value": a.value} for a in (shape.attributes or [])
-        ],
-    }
-
-
-def _label_name_for(instance_data, label_id):
-    label_mapping = getattr(instance_data, "_label_mapping", None) or {}
-    label = label_mapping.get(label_id)
-    return label.name if label else None
+def _attrs(attributes):
+    return [{"name": a.name, "value": a.value} for a in (attributes or [])]
 
 
 def _serialize_annotations(instance_data):
     shapes_out = []
-    tracks_out = []
-    tags_out = []
-
     for shape in instance_data.shapes:
-        shapes_out.append(
-            _serialize_shape(shape, _label_name_for(instance_data, shape.label))
-        )
+        shapes_out.append({
+            "type": shape.type,
+            "label": shape.label,
+            "frame": shape.frame,
+            "points": list(shape.points),
+            "rotation": getattr(shape, "rotation", 0),
+            "occluded": getattr(shape, "occluded", False),
+            "outside": getattr(shape, "outside", False),
+            "z_order": getattr(shape, "z_order", 0),
+            "group": getattr(shape, "group", 0),
+            "attributes": _attrs(shape.attributes),
+        })
 
+    tracks_out = []
     for track in instance_data.tracks:
         tracks_out.append({
             "track_id": track.id,
-            "label": _label_name_for(instance_data, track.label),
+            "label": track.label,
             "group": track.group,
             "shapes": [
                 {
@@ -89,21 +76,18 @@ def _serialize_annotations(instance_data):
                     "keyframe": s.keyframe,
                     "rotation": getattr(s, "rotation", 0),
                     "z_order": getattr(s, "z_order", 0),
-                    "attributes": [
-                        {"name": a.name, "value": a.value} for a in (s.attributes or [])
-                    ],
+                    "attributes": _attrs(s.attributes),
                 }
                 for s in track.shapes
             ],
         })
 
+    tags_out = []
     for tag in instance_data.tags:
         tags_out.append({
             "frame": tag.frame,
-            "label": _label_name_for(instance_data, tag.label),
-            "attributes": [
-                {"name": a.name, "value": a.value} for a in (tag.attributes or [])
-            ],
+            "label": tag.label,
+            "attributes": _attrs(tag.attributes),
         })
 
     return {"shapes": shapes_out, "tracks": tracks_out, "tags": tags_out}
@@ -141,14 +125,10 @@ def _serialize_temporal_descriptions(db_jobs):
     out = []
     for d in descs:
         out.append({
-            "id": d.id,
-            "job_id": d.job_id,
             "frame_start": d.frame_start,
             "frame_end": d.frame_end,
             "text": d.text,
             "structured_fields": d.structured_fields or {},
-            "created_date": d.created_date.isoformat() if d.created_date else None,
-            "updated_date": d.updated_date.isoformat() if d.updated_date else None,
         })
     return out
 
@@ -163,16 +143,10 @@ def _export_shofo_full(dst_file, temp_dir, instance_data, save_images=False):
     payload = {
         "shofo_video_id": shofo_video_id,
         "source_filename": source_filename,
-        "task": {
-            "id": db_task.id if db_task else None,
-            "name": db_task.name if db_task else None,
-            "mode": db_task.mode if db_task else None,
-        },
         "video_metadata": video_meta,
         "labels": _serialize_labels(instance_data),
         "annotations": _serialize_annotations(instance_data),
         "temporal_descriptions": _serialize_temporal_descriptions(db_jobs),
-        "export_date": datetime.now(timezone.utc).isoformat(),
         "format_version": "shofo-full-1.0",
     }
 
