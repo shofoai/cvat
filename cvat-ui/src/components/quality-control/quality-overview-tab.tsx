@@ -201,6 +201,15 @@ function QualityOverviewTab(props: Readonly<Props>): JSX.Element {
         history.push(`/tasks/${(instance as Task).id}/jobs/${jobId}?frame=${frame}`);
     }, [history, instance]);
 
+    const jumpToConflict = useCallback((conflict: QualityConflict, fallbackJobId: number): void => {
+        const ann = conflict.annotationConflicts[0];
+        const targetJobId = ann?.jobID ?? fallbackJobId;
+        const params = new URLSearchParams({ frame: String(conflict.frame) });
+        if (ann?.type) params.set('type', ann.type);
+        if (ann?.serverID != null) params.set('serverID', String(ann.serverID));
+        history.push(`/tasks/${(instance as Task).id}/jobs/${targetJobId}?${params.toString()}`);
+    }, [history, instance]);
+
     const rows: JobRow[] = useMemo(() => {
         const reportByJob: Record<number, QualityReport> = {};
         jobReports.forEach((r) => { reportByJob[r.jobID] = r; });
@@ -440,36 +449,43 @@ function QualityOverviewTab(props: Readonly<Props>): JSX.Element {
                                 <Text strong style={{ display: 'block', marginBottom: 8 }}>
                                     {`Conflicts in job #${row.jobId}`}
                                 </Text>
-                                {conflicts.map((c) => (
-                                    <Row
-                                        key={c.id}
-                                        align='middle'
-                                        gutter={8}
-                                        style={{
-                                            padding: '4px 0',
-                                            borderBottom: '1px solid #f0f0f0',
-                                        }}
-                                    >
-                                        <Col flex='60px'>
-                                            <Button
-                                                type='link'
-                                                size='small'
-                                                icon={<AimOutlined />}
-                                                onClick={() => jumpToFrame(row.jobId, c.frame)}
-                                            >
-                                                {`#${c.frame}`}
-                                            </Button>
-                                        </Col>
-                                        <Col flex='auto'>
-                                            <Text>{c.description}</Text>
-                                        </Col>
-                                        <Col flex='90px' style={{ textAlign: 'right' }}>
-                                            <Tag color={c.severity === 'error' ? 'red' : 'orange'}>
-                                                {c.severity}
-                                            </Tag>
-                                        </Col>
-                                    </Row>
-                                ))}
+                                {conflicts.map((c) => {
+                                    const ann = c.annotationConflicts[0];
+                                    const destLabel = ann?.jobID === row.jobId ? 'annotator' : 'GT';
+                                    return (
+                                        <Row
+                                            key={c.id}
+                                            align='middle'
+                                            gutter={8}
+                                            style={{
+                                                padding: '4px 0',
+                                                borderBottom: '1px solid #f0f0f0',
+                                            }}
+                                        >
+                                            <Col flex='80px'>
+                                                <Button
+                                                    type='link'
+                                                    size='small'
+                                                    icon={<AimOutlined />}
+                                                    onClick={() => jumpToConflict(c, row.jobId)}
+                                                >
+                                                    {`#${c.frame}`}
+                                                </Button>
+                                            </Col>
+                                            <Col flex='auto'>
+                                                <Text>{c.description}</Text>
+                                                <Text type='secondary' style={{ marginLeft: 6, fontSize: 12 }}>
+                                                    {`(opens in ${destLabel} job)`}
+                                                </Text>
+                                            </Col>
+                                            <Col flex='90px' style={{ textAlign: 'right' }}>
+                                                <Tag color={c.severity === 'error' ? 'red' : 'orange'}>
+                                                    {c.severity}
+                                                </Tag>
+                                            </Col>
+                                        </Row>
+                                    );
+                                })}
                             </div>
                         );
                     },
