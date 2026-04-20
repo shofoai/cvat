@@ -65,9 +65,18 @@ Descriptions tab now appears before Issues in `cvat-ui/src/components/annotation
 
 ### SAM2 pipeline — WASH, start over
 
-Previous approach (branch `shofo/sam2-tracking`) produced **polygon annotations with frame-to-frame interpolation**, not real per-frame masks. Polygons + interpolation ≠ masks. Customers asking for segmentation want masks.
+Previous approach produced **polygon annotations with frame-to-frame interpolation**, not real per-frame masks. Polygons + interpolation ≠ masks. Customers asking for segmentation want masks.
 
-Recommendation: delete the old branch, start a fresh branch off `shofo/main`, target actual per-frame mask output. SAM2's native output is masks — the previous code was converting them to polygons somewhere to fit CVAT's shape model. Look into whether CVAT's `mask` shape type (bitmap) is the right target instead of `polygon`.
+Full postmortem: [SAM2_IMPLEMENTATION_SUMMARY.md](SAM2_IMPLEMENTATION_SUMMARY.md). TL;DR of what to NOT repeat:
+
+1. **Don't register SAM2 as a Nuclio tracker.** Nuclio's tracker protocol round-trips state (position/context) over HTTP between every frame. SAM2's internal state is hundreds of MB of GPU tensors — base64-encoding them to JSON blows past request size limits and is fragile with BFloat16 numpy serialization.
+2. **Don't convert SAM2 masks to polygons** to shoehorn into CVAT's shape model. CVAT has a native `mask` shape type (bitmap) — target that instead. SAM2's output is already masks; keep it that way.
+3. **The interactor pattern (`sam2/nuclio-interactor/`) worked for single-frame segmentation** — that's a fine reference. The tracker pattern (`sam2/nuclio/`) is what failed.
+4. **Propagation should live in the Nuclio function, not round-trip per frame.** Send the initial prompt once, let the function process the whole video (or a chunk) server-side, return a sparse set of masks. Either store masks as a CVAT Track of `mask` shapes, or stream them back and let the UI hydrate incrementally.
+
+Recommendation: fresh branch off `shofo/main`, keep `main.py` from the interactor as a starting point for single-frame SAM2, design the video-propagation path from scratch around native masks.
+
+The old `shofo/sam2-tracking` branch is superseded by `shofo/main` (already contains the same commit) and will be deleted.
 
 ### GPU VM
 
